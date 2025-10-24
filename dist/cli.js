@@ -361,13 +361,23 @@ var AtlasGenerator = class {
   }
   /**
    * Get base path for frame key generation
+   * Extracts the base directory from a glob pattern by finding
+   * the path before any wildcard characters
    */
   getBasePath(inputPath) {
-    const cleanPath = inputPath.replace(/\*\*\/\*/g, "").replace(/\*/g, "");
-    if (cleanPath && !cleanPath.includes("*")) {
-      return cleanPath;
+    const wildcardMatch = inputPath.match(/[*?{\[]/);
+    if (!wildcardMatch || wildcardMatch.index === void 0) {
+      return inputPath;
     }
-    return path.dirname(cleanPath);
+    const beforeWildcard = inputPath.substring(0, wildcardMatch.index);
+    const lastSeparator = Math.max(
+      beforeWildcard.lastIndexOf("/"),
+      beforeWildcard.lastIndexOf("\\")
+    );
+    if (lastSeparator === -1) {
+      return process.cwd();
+    }
+    return path.resolve(beforeWildcard.substring(0, lastSeparator));
   }
   /**
    * Generate frame key from file path, preserving directory structure

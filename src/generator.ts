@@ -334,18 +334,35 @@ export class AtlasGenerator {
 
   /**
    * Get base path for frame key generation
+   * Extracts the base directory from a glob pattern by finding
+   * the path before any wildcard characters
    */
   private getBasePath(inputPath: string): string {
-    // Remove glob patterns
-    const cleanPath = inputPath.replace(/\*\*\/\*/g, '').replace(/\*/g, '');
+    // Find the first wildcard character (*, ?, {, [)
+    const wildcardMatch = inputPath.match(/[*?{\[]/);
 
-    // If cleanPath is not empty, use it, otherwise use directory
-    if (cleanPath && !cleanPath.includes('*')) {
-      return cleanPath;
+    if (!wildcardMatch || wildcardMatch.index === undefined) {
+      // No wildcards, treat as a regular path
+      // If it's a directory, return it; otherwise return its dirname
+      return inputPath;
     }
 
-    // If not a valid path, use directory of the pattern
-    return path.dirname(cleanPath);
+    // Get everything before the first wildcard
+    const beforeWildcard = inputPath.substring(0, wildcardMatch.index);
+
+    // Find the last directory separator (works for both Unix and Windows)
+    const lastSeparator = Math.max(
+      beforeWildcard.lastIndexOf('/'),
+      beforeWildcard.lastIndexOf('\\')
+    );
+
+    if (lastSeparator === -1) {
+      // No separator found, use current directory
+      return process.cwd();
+    }
+
+    // Return the base directory path (resolve to absolute path)
+    return path.resolve(beforeWildcard.substring(0, lastSeparator));
   }
 
   /**

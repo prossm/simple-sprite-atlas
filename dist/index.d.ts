@@ -213,6 +213,8 @@ declare class AtlasGenerator {
     private generatePhaserArrayFormat;
     /**
      * Get base path for frame key generation
+     * Extracts the base directory from a glob pattern by finding
+     * the path before any wildcard characters
      */
     private getBasePath;
     /**

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
   generateAtlas
-} from "./chunk-FPHVE77L.mjs";
+} from "./chunk-N4PFG6ZD.mjs";
 
 // src/cli.ts
 import { Command } from "commander";
