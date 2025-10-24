@@ -2,9 +2,8 @@
 
 Lightweight, secure sprite atlas generator for Phaser games with zero vulnerabilities.
 
-[![npm version](https://img.shields.io/npm/v/simple-sprite-atlas.svg)](https://www.npmjs.com/package/simple-sprite-atlas)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![npm downloads](https://img.shields.io/npm/dm/simple-sprite-atlas.svg)](https://www.npmjs.com/package/simple-sprite-atlas)
+[![GitHub](https://img.shields.io/badge/GitHub-prossm%2Fsimple--sprite--atlas-blue)](https://github.com/prossm/simple-sprite-atlas)
 
 ## Why Simple Sprite Atlas?
 
@@ -24,26 +23,48 @@ Most sprite atlas generators are either:
 
 ## Installation
 
-```bash
-npm install simple-sprite-atlas
-```
-
-Or use directly with npx:
+Install directly from GitHub:
 
 ```bash
-npx simple-sprite-atlas --input sprites --output dist/atlas
+npm install --save-dev github:prossm/simple-sprite-atlas
 ```
+
+Or install globally to use as a CLI tool:
+
+```bash
+npm install -g github:prossm/simple-sprite-atlas
+```
+
+> **Note:** This package is not yet published to npm. Once published, you'll be able to use `npm install simple-sprite-atlas`.
 
 ## Quick Start
 
 ### CLI Usage
 
+After installing, add to your `package.json` scripts:
+
+```json
+{
+  "scripts": {
+    "build:atlas": "simple-sprite-atlas --input assets/sprites --output dist/atlas"
+  }
+}
+```
+
+Then run:
+
+```bash
+npm run build:atlas
+```
+
+Or if installed globally:
+
 ```bash
 # Basic usage
-npx simple-sprite-atlas --input assets/sprites --output dist/atlas
+simple-sprite-atlas --input assets/sprites --output dist/atlas
 
 # With options
-npx simple-sprite-atlas \
+simple-sprite-atlas \
   --input "assets/sprites/**/*.png" \
   --output dist/characters \
   --format phaser3-hash \

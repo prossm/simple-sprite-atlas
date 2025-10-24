@@ -5,10 +5,28 @@ import { generateAtlas } from './index.js';
 import type { AtlasFormat } from './types.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 
-// Read package.json for version
-const packageJsonPath = new URL('../package.json', import.meta.url);
-const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+// Read package.json for version (works with both ESM and CJS)
+let packageJson: { version: string };
+
+try {
+  // For ESM builds
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const packageJsonPath = path.join(__dirname, '../package.json');
+  packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+} catch {
+  // Fallback: use require for CJS or if file not found
+  try {
+    const require = createRequire(import.meta.url);
+    packageJson = require('../package.json');
+  } catch {
+    // Ultimate fallback
+    packageJson = { version: '1.0.0' };
+  }
+}
 
 const program = new Command();
 
