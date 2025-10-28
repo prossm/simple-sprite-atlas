@@ -3,6 +3,14 @@
  */
 type AtlasFormat = 'phaser3-hash' | 'phaser3-array';
 /**
+ * Resize mode for sprite resizing
+ */
+type ResizeMode = 'contain' | 'cover' | 'stretch';
+/**
+ * Resize filter for image resampling
+ */
+type ResizeFilter = 'nearest' | 'linear' | 'lanczos';
+/**
  * Configuration options for atlas generation
  */
 interface AtlasOptions {
@@ -44,6 +52,29 @@ interface AtlasOptions {
      * @default 1
      */
     scale?: number;
+    /**
+     * Resize all sprites to fit within this dimension (maintains aspect ratio)
+     */
+    resizeTo?: number;
+    /**
+     * Resize mode: how to handle aspect ratio when resizing
+     * @default 'contain'
+     */
+    resizeMode?: ResizeMode;
+    /**
+     * Resize filter: image resampling algorithm
+     * @default 'lanczos'
+     */
+    resizeFilter?: ResizeFilter;
+    /**
+     * Grid cell size: layout sprites on a fixed grid of this size
+     */
+    gridSize?: number;
+    /**
+     * Include grid position metadata in JSON output
+     * @default false
+     */
+    gridMetadata?: boolean;
 }
 /**
  * Sprite metadata from input file
@@ -96,6 +127,13 @@ interface SpritePlacement extends SpriteInfo {
      * Y position in atlas
      */
     y: number;
+    /**
+     * Grid position (if using grid layout)
+     */
+    gridX?: number;
+    gridY?: number;
+    gridCellsWide?: number;
+    gridCellsHigh?: number;
 }
 /**
  * Frame data in Phaser JSON format
@@ -118,6 +156,12 @@ interface PhaserFrame {
     sourceSize: {
         w: number;
         h: number;
+    };
+    grid?: {
+        x: number;
+        y: number;
+        cellWidth: number;
+        cellHeight: number;
     };
 }
 /**
@@ -192,6 +236,10 @@ declare class AtlasGenerator {
      */
     private loadSprites;
     /**
+     * Resize sprite to fit within target dimensions
+     */
+    private resizeSprite;
+    /**
      * Trim transparent pixels from sprite
      */
     private trimSprite;
@@ -230,7 +278,8 @@ declare class AtlasGenerator {
 declare class GridPacker {
     private padding;
     private maxSize;
-    constructor(padding?: number, maxSize?: number);
+    private gridSize?;
+    constructor(padding?: number, maxSize?: number, gridSize?: number);
     /**
      * Pack sprites into an atlas layout
      * Returns array of sprite placements and final atlas dimensions
@@ -240,6 +289,15 @@ declare class GridPacker {
         width: number;
         height: number;
     };
+    /**
+     * Pack sprites using standard row-based algorithm
+     */
+    private packRowBased;
+    /**
+     * Pack sprites using fixed grid-based algorithm
+     * All sprites are aligned to grid boundaries
+     */
+    private packFixedGrid;
     /**
      * Calculate total area needed (useful for validation)
      */

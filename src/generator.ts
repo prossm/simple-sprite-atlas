@@ -16,7 +16,8 @@ import type {
  * Main atlas generator class
  */
 export class AtlasGenerator {
-  private options: Required<AtlasOptions>;
+  private options: Required<Omit<AtlasOptions, 'resizeTo' | 'gridSize'>> &
+    Pick<AtlasOptions, 'resizeTo' | 'gridSize'>;
 
   constructor(options: AtlasOptions) {
     this.options = {
@@ -26,6 +27,9 @@ export class AtlasGenerator {
       spacing: 0,
       trim: false,
       scale: 1,
+      resizeMode: 'contain',
+      resizeFilter: 'lanczos',
+      gridMetadata: false,
       ...options,
     };
   }
@@ -44,7 +48,8 @@ export class AtlasGenerator {
     // Pack sprites
     const packer = new GridPacker(
       this.options.padding + this.options.spacing,
-      this.options.maxSize
+      this.options.maxSize,
+      this.options.gridSize
     );
 
     if (!packer.canFit(sprites)) {
@@ -117,13 +122,18 @@ export class AtlasGenerator {
         // Generate frame key preserving directory structure
         const frameKey = this.generateFrameKey(file, basePath);
 
-        const spriteInfo: SpriteInfo = {
+        let spriteInfo: SpriteInfo = {
           path: file,
           key: frameKey,
           width: metadata.width,
           height: metadata.height,
           buffer,
         };
+
+        // Handle resizing if enabled (before trimming)
+        if (this.options.resizeTo) {
+          spriteInfo = await this.resizeSprite(spriteInfo, this.options.resizeTo);
+        }
 
         // Handle trimming if enabled
         if (this.options.trim) {
@@ -138,6 +148,58 @@ export class AtlasGenerator {
     }
 
     return sprites;
+  }
+
+  /**
+   * Resize sprite to fit within target dimensions
+   */
+  private async resizeSprite(sprite: SpriteInfo, targetSize: number): Promise<SpriteInfo> {
+    try {
+      const image = sharp(sprite.buffer);
+      const metadata = await image.metadata();
+
+      if (!metadata.width || !metadata.height) {
+        return sprite;
+      }
+
+      // Map resize mode to sharp's fit options
+      const fitMap: Record<string, any> = {
+        contain: 'contain',
+        cover: 'cover',
+        stretch: 'fill',
+      };
+
+      // Map filter to sharp's kernel
+      const kernelMap: Record<string, any> = {
+        lanczos: 'lanczos3',
+        nearest: 'nearest',
+        linear: 'cubic',
+      };
+
+      const resizeOptions: any = {
+        width: targetSize,
+        height: targetSize,
+        fit: fitMap[this.options.resizeMode],
+        position: 'center',
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+        kernel: kernelMap[this.options.resizeFilter],
+      };
+
+      const resized = await image
+        .resize(resizeOptions)
+        .png()
+        .toBuffer({ resolveWithObject: true });
+
+      return {
+        ...sprite,
+        width: resized.info.width,
+        height: resized.info.height,
+        buffer: resized.data,
+      };
+    } catch (error) {
+      console.warn(`Failed to resize ${sprite.path}: ${error}`);
+      return sprite;
+    }
   }
 
   /**
@@ -254,7 +316,7 @@ export class AtlasGenerator {
       };
       const trimOffset = placement.trimOffset || { x: 0, y: 0 };
 
-      frames[placement.key] = {
+      const frameData: any = {
         frame: {
           x: placement.x,
           y: placement.y,
@@ -271,6 +333,22 @@ export class AtlasGenerator {
         },
         sourceSize,
       };
+
+      // Add grid metadata if using grid layout and metadata is enabled
+      if (
+        this.options.gridMetadata &&
+        placement.gridX !== undefined &&
+        placement.gridY !== undefined
+      ) {
+        frameData.grid = {
+          x: placement.gridX,
+          y: placement.gridY,
+          cellWidth: placement.gridCellsWide || 1,
+          cellHeight: placement.gridCellsHigh || 1,
+        };
+      }
+
+      frames[placement.key] = frameData;
     }
 
     return {
@@ -301,7 +379,7 @@ export class AtlasGenerator {
       };
       const trimOffset = placement.trimOffset || { x: 0, y: 0 };
 
-      return {
+      const frameData: any = {
         filename: placement.key,
         frame: {
           x: placement.x,
@@ -319,6 +397,22 @@ export class AtlasGenerator {
         },
         sourceSize,
       };
+
+      // Add grid metadata if using grid layout and metadata is enabled
+      if (
+        this.options.gridMetadata &&
+        placement.gridX !== undefined &&
+        placement.gridY !== undefined
+      ) {
+        frameData.grid = {
+          x: placement.gridX,
+          y: placement.gridY,
+          cellWidth: placement.gridCellsWide || 1,
+          cellHeight: placement.gridCellsHigh || 1,
+        };
+      }
+
+      return frameData;
     });
 
     return {

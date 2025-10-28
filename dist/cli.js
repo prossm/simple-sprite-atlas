@@ -39,9 +39,11 @@ function nextPowerOf2(n) {
 var GridPacker = class {
   padding;
   maxSize;
-  constructor(padding = 2, maxSize = 2048) {
+  gridSize;
+  constructor(padding = 2, maxSize = 2048, gridSize) {
     this.padding = padding;
     this.maxSize = maxSize;
+    this.gridSize = gridSize;
   }
   /**
    * Pack sprites into an atlas layout
@@ -51,6 +53,15 @@ var GridPacker = class {
     if (sprites.length === 0) {
       return { placements: [], width: 0, height: 0 };
     }
+    if (this.gridSize) {
+      return this.packFixedGrid(sprites);
+    }
+    return this.packRowBased(sprites);
+  }
+  /**
+   * Pack sprites using standard row-based algorithm
+   */
+  packRowBased(sprites) {
     const sortedSprites = [...sprites].sort((a, b) => b.height - a.height);
     const placements = [];
     let currentX = this.padding;
@@ -83,6 +94,62 @@ var GridPacker = class {
     }
     const finalWidth = Math.min(nextPowerOf2(maxWidth), this.maxSize);
     const finalHeight = Math.min(nextPowerOf2(maxHeight), this.maxSize);
+    return {
+      placements,
+      width: finalWidth,
+      height: finalHeight
+    };
+  }
+  /**
+   * Pack sprites using fixed grid-based algorithm
+   * All sprites are aligned to grid boundaries
+   */
+  packFixedGrid(sprites) {
+    const gridSize = this.gridSize;
+    const sortedSprites = [...sprites].sort(
+      (a, b) => b.width * b.height - a.width * a.height
+    );
+    const placements = [];
+    let currentX = 0;
+    let currentY = 0;
+    let rowHeight = 0;
+    let maxWidth = 0;
+    let maxHeight = 0;
+    for (const sprite of sortedSprites) {
+      const cellsWide = Math.ceil((sprite.width + this.padding) / gridSize);
+      const cellsHigh = Math.ceil((sprite.height + this.padding) / gridSize);
+      const cellWidth = cellsWide * gridSize;
+      const cellHeight = cellsHigh * gridSize;
+      if (currentX + cellWidth > this.maxSize) {
+        currentX = 0;
+        currentY += rowHeight;
+        rowHeight = 0;
+        if (currentY + cellHeight > this.maxSize) {
+          throw new Error(
+            `Cannot fit all sprites in atlas with grid size ${gridSize}. Maximum size: ${this.maxSize}x${this.maxSize}. Consider increasing maxSize, reducing grid size, or reducing sprite count.`
+          );
+        }
+      }
+      const offsetX = Math.floor((cellWidth - sprite.width) / 2);
+      const offsetY = Math.floor((cellHeight - sprite.height) / 2);
+      placements.push({
+        ...sprite,
+        x: currentX + offsetX,
+        y: currentY + offsetY,
+        gridX: currentX / gridSize,
+        gridY: currentY / gridSize,
+        gridCellsWide: cellsWide,
+        gridCellsHigh: cellsHigh
+      });
+      maxWidth = Math.max(maxWidth, currentX + cellWidth);
+      maxHeight = Math.max(maxHeight, currentY + cellHeight);
+      rowHeight = Math.max(rowHeight, cellHeight);
+      currentX += cellWidth;
+    }
+    const gridAlignedWidth = Math.ceil(maxWidth / gridSize) * gridSize;
+    const gridAlignedHeight = Math.ceil(maxHeight / gridSize) * gridSize;
+    const finalWidth = Math.min(nextPowerOf2(gridAlignedWidth), this.maxSize);
+    const finalHeight = Math.min(nextPowerOf2(gridAlignedHeight), this.maxSize);
     return {
       placements,
       width: finalWidth,
@@ -128,6 +195,9 @@ var AtlasGenerator = class {
       spacing: 0,
       trim: false,
       scale: 1,
+      resizeMode: "contain",
+      resizeFilter: "lanczos",
+      gridMetadata: false,
       ...options
     };
   }
@@ -141,7 +211,8 @@ var AtlasGenerator = class {
     }
     const packer = new GridPacker(
       this.options.padding + this.options.spacing,
-      this.options.maxSize
+      this.options.maxSize,
+      this.options.gridSize
     );
     if (!packer.canFit(sprites)) {
       throw new Error(
@@ -191,13 +262,16 @@ var AtlasGenerator = class {
           continue;
         }
         const frameKey = this.generateFrameKey(file, basePath);
-        const spriteInfo = {
+        let spriteInfo = {
           path: file,
           key: frameKey,
           width: metadata.width,
           height: metadata.height,
           buffer
         };
+        if (this.options.resizeTo) {
+          spriteInfo = await this.resizeSprite(spriteInfo, this.options.resizeTo);
+        }
         if (this.options.trim) {
           const trimmed = await this.trimSprite(spriteInfo);
           sprites.push(trimmed);
@@ -209,6 +283,46 @@ var AtlasGenerator = class {
       }
     }
     return sprites;
+  }
+  /**
+   * Resize sprite to fit within target dimensions
+   */
+  async resizeSprite(sprite, targetSize) {
+    try {
+      const image = (0, import_sharp.default)(sprite.buffer);
+      const metadata = await image.metadata();
+      if (!metadata.width || !metadata.height) {
+        return sprite;
+      }
+      const fitMap = {
+        contain: "contain",
+        cover: "cover",
+        stretch: "fill"
+      };
+      const kernelMap = {
+        lanczos: "lanczos3",
+        nearest: "nearest",
+        linear: "cubic"
+      };
+      const resizeOptions = {
+        width: targetSize,
+        height: targetSize,
+        fit: fitMap[this.options.resizeMode],
+        position: "center",
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+        kernel: kernelMap[this.options.resizeFilter]
+      };
+      const resized = await image.resize(resizeOptions).png().toBuffer({ resolveWithObject: true });
+      return {
+        ...sprite,
+        width: resized.info.width,
+        height: resized.info.height,
+        buffer: resized.data
+      };
+    } catch (error) {
+      console.warn(`Failed to resize ${sprite.path}: ${error}`);
+      return sprite;
+    }
   }
   /**
    * Trim transparent pixels from sprite
@@ -291,7 +405,7 @@ var AtlasGenerator = class {
         h: placement.height
       };
       const trimOffset = placement.trimOffset || { x: 0, y: 0 };
-      frames[placement.key] = {
+      const frameData = {
         frame: {
           x: placement.x,
           y: placement.y,
@@ -308,6 +422,15 @@ var AtlasGenerator = class {
         },
         sourceSize
       };
+      if (this.options.gridMetadata && placement.gridX !== void 0 && placement.gridY !== void 0) {
+        frameData.grid = {
+          x: placement.gridX,
+          y: placement.gridY,
+          cellWidth: placement.gridCellsWide || 1,
+          cellHeight: placement.gridCellsHigh || 1
+        };
+      }
+      frames[placement.key] = frameData;
     }
     return {
       frames,
@@ -330,7 +453,7 @@ var AtlasGenerator = class {
         h: placement.height
       };
       const trimOffset = placement.trimOffset || { x: 0, y: 0 };
-      return {
+      const frameData = {
         filename: placement.key,
         frame: {
           x: placement.x,
@@ -348,6 +471,15 @@ var AtlasGenerator = class {
         },
         sourceSize
       };
+      if (this.options.gridMetadata && placement.gridX !== void 0 && placement.gridY !== void 0) {
+        frameData.grid = {
+          x: placement.gridX,
+          y: placement.gridY,
+          cellWidth: placement.gridCellsWide || 1,
+          cellHeight: placement.gridCellsHigh || 1
+        };
+      }
+      return frameData;
     });
     return {
       frames,
@@ -418,7 +550,7 @@ try {
   }
 }
 var program = new import_commander.Command();
-program.name("simple-sprite-atlas").description("Lightweight sprite atlas generator for Phaser games").version(packageJson.version).requiredOption("-i, --input <path>", 'Input directory or glob pattern (e.g., "sprites/**/*.png")').requiredOption("-o, --output <path>", 'Output path without extension (e.g., "dist/atlas")').option("-f, --format <format>", "Output format: phaser3-hash or phaser3-array", "phaser3-hash").option("-m, --max-size <size>", "Maximum atlas size (must be power of 2)", "2048").option("-p, --padding <pixels>", "Padding between sprites", "2").option("-s, --spacing <pixels>", "Spacing around each sprite", "0").option("-t, --trim", "Trim transparent pixels", false).option("--scale <scale>", "Scale factor for the atlas", "1").action(async (options) => {
+program.name("simple-sprite-atlas").description("Lightweight sprite atlas generator for Phaser games").version(packageJson.version).requiredOption("-i, --input <path>", 'Input directory or glob pattern (e.g., "sprites/**/*.png")').requiredOption("-o, --output <path>", 'Output path without extension (e.g., "dist/atlas")').option("-f, --format <format>", "Output format: phaser3-hash or phaser3-array", "phaser3-hash").option("-m, --max-size <size>", "Maximum atlas size (must be power of 2)", "2048").option("-p, --padding <pixels>", "Padding between sprites", "2").option("-s, --spacing <pixels>", "Spacing around each sprite", "0").option("-t, --trim", "Trim transparent pixels", false).option("--scale <scale>", "Scale factor for the atlas", "1").option("--resize-to <size>", "Resize all sprites to fit within <size> pixels (maintains aspect ratio)").option("--resize-mode <mode>", "Resize mode: contain (default), cover, or stretch", "contain").option("--resize-filter <filter>", "Resize filter: lanczos (default), nearest, or linear", "lanczos").option("--grid-size <size>", "Layout sprites on a fixed grid of <size> pixels").option("--grid-metadata", "Include grid position data in JSON output", false).action(async (options) => {
   try {
     console.log("\u{1F3A8} Simple Sprite Atlas Generator");
     console.log("================================\n");
@@ -432,22 +564,40 @@ program.name("simple-sprite-atlas").description("Lightweight sprite atlas genera
     const padding = parseInt(options.padding, 10);
     const spacing = parseInt(options.spacing, 10);
     const scale = parseFloat(options.scale);
+    const resizeTo = options.resizeTo ? parseInt(options.resizeTo, 10) : void 0;
+    const gridSize = options.gridSize ? parseInt(options.gridSize, 10) : void 0;
     if ((maxSize & maxSize - 1) !== 0) {
       console.error(`\u274C Max size must be a power of 2 (e.g., 512, 1024, 2048, 4096)`);
+      process.exit(1);
+    }
+    if (options.resizeMode && !["contain", "cover", "stretch"].includes(options.resizeMode)) {
+      console.error(`\u274C Invalid resize mode: ${options.resizeMode}`);
+      console.error("   Valid modes: contain, cover, stretch");
+      process.exit(1);
+    }
+    if (options.resizeFilter && !["lanczos", "nearest", "linear"].includes(options.resizeFilter)) {
+      console.error(`\u274C Invalid resize filter: ${options.resizeFilter}`);
+      console.error("   Valid filters: lanczos, nearest, linear");
       process.exit(1);
     }
     const outputDir = path2.dirname(options.output);
     if (outputDir && outputDir !== ".") {
       await fs2.promises.mkdir(outputDir, { recursive: true });
     }
-    console.log(`\u{1F4C1} Input:      ${options.input}`);
-    console.log(`\u{1F4E6} Output:     ${options.output}.{png,json}`);
-    console.log(`\u{1F3AF} Format:     ${format}`);
-    console.log(`\u{1F4CF} Max Size:   ${maxSize}x${maxSize}`);
-    console.log(`\u{1F532} Padding:    ${padding}px`);
-    console.log(`\u{1F533} Spacing:    ${spacing}px`);
-    console.log(`\u2702\uFE0F  Trim:       ${options.trim ? "Yes" : "No"}`);
-    console.log(`\u{1F50D} Scale:      ${scale}`);
+    console.log(`\u{1F4C1} Input:        ${options.input}`);
+    console.log(`\u{1F4E6} Output:       ${options.output}.{png,json}`);
+    console.log(`\u{1F3AF} Format:       ${format}`);
+    console.log(`\u{1F4CF} Max Size:     ${maxSize}x${maxSize}`);
+    console.log(`\u{1F532} Padding:      ${padding}px`);
+    console.log(`\u{1F533} Spacing:      ${spacing}px`);
+    console.log(`\u2702\uFE0F  Trim:         ${options.trim ? "Yes" : "No"}`);
+    console.log(`\u{1F50D} Scale:        ${scale}`);
+    if (resizeTo) {
+      console.log(`\u{1F4D0} Resize To:    ${resizeTo}px (${options.resizeMode}, ${options.resizeFilter})`);
+    }
+    if (gridSize) {
+      console.log(`\u{1F533} Grid Size:    ${gridSize}px (metadata: ${options.gridMetadata ? "Yes" : "No"})`);
+    }
     console.log("");
     console.log("\u23F3 Generating atlas...\n");
     const startTime = Date.now();
@@ -459,7 +609,12 @@ program.name("simple-sprite-atlas").description("Lightweight sprite atlas genera
       padding,
       spacing,
       trim: options.trim,
-      scale
+      scale,
+      resizeTo,
+      resizeMode: options.resizeMode,
+      resizeFilter: options.resizeFilter,
+      gridSize,
+      gridMetadata: options.gridMetadata
     });
     const duration = Date.now() - startTime;
     console.log("\u2705 Atlas generated successfully!\n");

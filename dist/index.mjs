@@ -2,7 +2,7 @@ import {
   AtlasGenerator,
   GridPacker,
   generateAtlas
-} from "./chunk-N4PFG6ZD.mjs";
+} from "./chunk-NQ3L6DTN.mjs";
 export {
   AtlasGenerator,
   GridPacker,

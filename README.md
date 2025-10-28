@@ -103,6 +103,11 @@ console.log(`Size: ${result.size.width}x${result.size.height}`);
 | `--spacing <pixels>` | `-s` | Spacing around each sprite | `0` |
 | `--trim` | `-t` | Trim transparent pixels | `false` |
 | `--scale <scale>` | | Scale factor for atlas | `1` |
+| `--resize-to <size>` | | Resize all sprites to fit within size (maintains aspect ratio) | none |
+| `--resize-mode <mode>` | | Resize mode: `contain`, `cover`, or `stretch` | `contain` |
+| `--resize-filter <filter>` | | Resize filter: `lanczos`, `nearest`, or `linear` | `lanczos` |
+| `--grid-size <size>` | | Layout sprites on fixed grid of size pixels | none |
+| `--grid-metadata` | | Include grid position data in JSON output | `false` |
 
 ## API Reference
 
@@ -122,6 +127,11 @@ interface AtlasOptions {
   spacing?: number;        // Default: 0
   trim?: boolean;          // Default: false
   scale?: number;          // Default: 1
+  resizeTo?: number;       // Resize sprites to fit within this size
+  resizeMode?: 'contain' | 'cover' | 'stretch';  // Default: 'contain'
+  resizeFilter?: 'lanczos' | 'nearest' | 'linear';  // Default: 'lanczos'
+  gridSize?: number;       // Layout sprites on fixed grid
+  gridMetadata?: boolean;  // Include grid position data (default: false)
 }
 ```
 
@@ -199,6 +209,85 @@ class GameScene extends Phaser.Scene {
 ```
 
 ## Features
+
+### Sprite Resizing
+
+Automatically resize sprites to create uniform texture atlases:
+
+```bash
+# Resize all sprites to fit within 32x32 pixels (maintains aspect ratio)
+simple-sprite-atlas --input sprites --output atlas --resize-to 32
+
+# Use different resize modes
+simple-sprite-atlas --input sprites --output atlas --resize-to 32 --resize-mode cover
+
+# Use nearest-neighbor filtering for pixel art
+simple-sprite-atlas --input sprites --output atlas --resize-to 32 --resize-filter nearest
+```
+
+**Resize Modes:**
+- `contain` (default): Fit sprite within bounds, maintain aspect ratio, add padding
+- `cover`: Fill bounds completely, maintain aspect ratio, may crop
+- `stretch`: Distort sprite to exactly fill bounds
+
+**Resize Filters:**
+- `lanczos` (default): High-quality smooth scaling
+- `linear`: Fast smooth scaling
+- `nearest`: Pixel-perfect scaling for pixel art
+
+### Grid-Based Layout
+
+Layout sprites on a fixed grid for GPU-friendly texture atlases:
+
+```bash
+# Layout sprites on a 32x32 pixel grid
+simple-sprite-atlas --input sprites --output atlas --grid-size 32
+
+# Include grid metadata in JSON output
+simple-sprite-atlas --input sprites --output atlas --grid-size 32 --grid-metadata
+```
+
+With grid layout:
+- All sprite positions are aligned to grid boundaries (multiples of grid size)
+- Atlas dimensions are multiples of grid size
+- Improves GPU cache utilization
+- Perfect for tile-based games
+
+**Grid Metadata Output:**
+
+When `--grid-metadata` is enabled, each frame includes grid position data:
+
+```json
+{
+  "frame": { "x": 64, "y": 128, "w": 32, "h": 32 },
+  "grid": {
+    "x": 2,          // Grid column (64 / 32)
+    "y": 4,          // Grid row (128 / 32)
+    "cellWidth": 1,  // Number of grid cells wide
+    "cellHeight": 1  // Number of grid cells high
+  }
+}
+```
+
+### Combined Usage
+
+Combine resizing and grid layout for optimal results:
+
+```bash
+# Resize all sprites to 32x32 and pack on 32x32 grid
+simple-sprite-atlas \
+  --input "assets/sprites/**/*.png" \
+  --output dist/atlas \
+  --resize-to 32 \
+  --grid-size 32 \
+  --grid-metadata
+```
+
+This creates uniform, grid-aligned atlases perfect for:
+- Tile-based games
+- Pixel art games
+- Performance-critical applications
+- Consistent visual scaling
 
 ### Directory Structure Preservation
 

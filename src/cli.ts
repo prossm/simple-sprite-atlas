@@ -42,6 +42,11 @@ program
   .option('-s, --spacing <pixels>', 'Spacing around each sprite', '0')
   .option('-t, --trim', 'Trim transparent pixels', false)
   .option('--scale <scale>', 'Scale factor for the atlas', '1')
+  .option('--resize-to <size>', 'Resize all sprites to fit within <size> pixels (maintains aspect ratio)')
+  .option('--resize-mode <mode>', 'Resize mode: contain (default), cover, or stretch', 'contain')
+  .option('--resize-filter <filter>', 'Resize filter: lanczos (default), nearest, or linear', 'lanczos')
+  .option('--grid-size <size>', 'Layout sprites on a fixed grid of <size> pixels')
+  .option('--grid-metadata', 'Include grid position data in JSON output', false)
   .action(async (options) => {
     try {
       console.log('🎨 Simple Sprite Atlas Generator');
@@ -60,10 +65,26 @@ program
       const padding = parseInt(options.padding, 10);
       const spacing = parseInt(options.spacing, 10);
       const scale = parseFloat(options.scale);
+      const resizeTo = options.resizeTo ? parseInt(options.resizeTo, 10) : undefined;
+      const gridSize = options.gridSize ? parseInt(options.gridSize, 10) : undefined;
 
       // Validate max size is power of 2
       if ((maxSize & (maxSize - 1)) !== 0) {
         console.error(`❌ Max size must be a power of 2 (e.g., 512, 1024, 2048, 4096)`);
+        process.exit(1);
+      }
+
+      // Validate resize mode
+      if (options.resizeMode && !['contain', 'cover', 'stretch'].includes(options.resizeMode)) {
+        console.error(`❌ Invalid resize mode: ${options.resizeMode}`);
+        console.error('   Valid modes: contain, cover, stretch');
+        process.exit(1);
+      }
+
+      // Validate resize filter
+      if (options.resizeFilter && !['lanczos', 'nearest', 'linear'].includes(options.resizeFilter)) {
+        console.error(`❌ Invalid resize filter: ${options.resizeFilter}`);
+        console.error('   Valid filters: lanczos, nearest, linear');
         process.exit(1);
       }
 
@@ -73,14 +94,20 @@ program
         await fs.promises.mkdir(outputDir, { recursive: true });
       }
 
-      console.log(`📁 Input:      ${options.input}`);
-      console.log(`📦 Output:     ${options.output}.{png,json}`);
-      console.log(`🎯 Format:     ${format}`);
-      console.log(`📏 Max Size:   ${maxSize}x${maxSize}`);
-      console.log(`🔲 Padding:    ${padding}px`);
-      console.log(`🔳 Spacing:    ${spacing}px`);
-      console.log(`✂️  Trim:       ${options.trim ? 'Yes' : 'No'}`);
-      console.log(`🔍 Scale:      ${scale}`);
+      console.log(`📁 Input:        ${options.input}`);
+      console.log(`📦 Output:       ${options.output}.{png,json}`);
+      console.log(`🎯 Format:       ${format}`);
+      console.log(`📏 Max Size:     ${maxSize}x${maxSize}`);
+      console.log(`🔲 Padding:      ${padding}px`);
+      console.log(`🔳 Spacing:      ${spacing}px`);
+      console.log(`✂️  Trim:         ${options.trim ? 'Yes' : 'No'}`);
+      console.log(`🔍 Scale:        ${scale}`);
+      if (resizeTo) {
+        console.log(`📐 Resize To:    ${resizeTo}px (${options.resizeMode}, ${options.resizeFilter})`);
+      }
+      if (gridSize) {
+        console.log(`🔳 Grid Size:    ${gridSize}px (metadata: ${options.gridMetadata ? 'Yes' : 'No'})`);
+      }
       console.log('');
 
       // Generate atlas
@@ -97,6 +124,11 @@ program
         spacing,
         trim: options.trim,
         scale,
+        resizeTo,
+        resizeMode: options.resizeMode,
+        resizeFilter: options.resizeFilter,
+        gridSize,
+        gridMetadata: options.gridMetadata,
       });
 
       const duration = Date.now() - startTime;

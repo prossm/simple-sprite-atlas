@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
   generateAtlas
-} from "./chunk-N4PFG6ZD.mjs";
+} from "./chunk-NQ3L6DTN.mjs";
 
 // src/cli.ts
 import { Command } from "commander";
@@ -24,7 +24,7 @@ try {
   }
 }
 var program = new Command();
-program.name("simple-sprite-atlas").description("Lightweight sprite atlas generator for Phaser games").version(packageJson.version).requiredOption("-i, --input <path>", 'Input directory or glob pattern (e.g., "sprites/**/*.png")').requiredOption("-o, --output <path>", 'Output path without extension (e.g., "dist/atlas")').option("-f, --format <format>", "Output format: phaser3-hash or phaser3-array", "phaser3-hash").option("-m, --max-size <size>", "Maximum atlas size (must be power of 2)", "2048").option("-p, --padding <pixels>", "Padding between sprites", "2").option("-s, --spacing <pixels>", "Spacing around each sprite", "0").option("-t, --trim", "Trim transparent pixels", false).option("--scale <scale>", "Scale factor for the atlas", "1").action(async (options) => {
+program.name("simple-sprite-atlas").description("Lightweight sprite atlas generator for Phaser games").version(packageJson.version).requiredOption("-i, --input <path>", 'Input directory or glob pattern (e.g., "sprites/**/*.png")').requiredOption("-o, --output <path>", 'Output path without extension (e.g., "dist/atlas")').option("-f, --format <format>", "Output format: phaser3-hash or phaser3-array", "phaser3-hash").option("-m, --max-size <size>", "Maximum atlas size (must be power of 2)", "2048").option("-p, --padding <pixels>", "Padding between sprites", "2").option("-s, --spacing <pixels>", "Spacing around each sprite", "0").option("-t, --trim", "Trim transparent pixels", false).option("--scale <scale>", "Scale factor for the atlas", "1").option("--resize-to <size>", "Resize all sprites to fit within <size> pixels (maintains aspect ratio)").option("--resize-mode <mode>", "Resize mode: contain (default), cover, or stretch", "contain").option("--resize-filter <filter>", "Resize filter: lanczos (default), nearest, or linear", "lanczos").option("--grid-size <size>", "Layout sprites on a fixed grid of <size> pixels").option("--grid-metadata", "Include grid position data in JSON output", false).action(async (options) => {
   try {
     console.log("\u{1F3A8} Simple Sprite Atlas Generator");
     console.log("================================\n");
@@ -38,22 +38,40 @@ program.name("simple-sprite-atlas").description("Lightweight sprite atlas genera
     const padding = parseInt(options.padding, 10);
     const spacing = parseInt(options.spacing, 10);
     const scale = parseFloat(options.scale);
+    const resizeTo = options.resizeTo ? parseInt(options.resizeTo, 10) : void 0;
+    const gridSize = options.gridSize ? parseInt(options.gridSize, 10) : void 0;
     if ((maxSize & maxSize - 1) !== 0) {
       console.error(`\u274C Max size must be a power of 2 (e.g., 512, 1024, 2048, 4096)`);
+      process.exit(1);
+    }
+    if (options.resizeMode && !["contain", "cover", "stretch"].includes(options.resizeMode)) {
+      console.error(`\u274C Invalid resize mode: ${options.resizeMode}`);
+      console.error("   Valid modes: contain, cover, stretch");
+      process.exit(1);
+    }
+    if (options.resizeFilter && !["lanczos", "nearest", "linear"].includes(options.resizeFilter)) {
+      console.error(`\u274C Invalid resize filter: ${options.resizeFilter}`);
+      console.error("   Valid filters: lanczos, nearest, linear");
       process.exit(1);
     }
     const outputDir = path.dirname(options.output);
     if (outputDir && outputDir !== ".") {
       await fs.promises.mkdir(outputDir, { recursive: true });
     }
-    console.log(`\u{1F4C1} Input:      ${options.input}`);
-    console.log(`\u{1F4E6} Output:     ${options.output}.{png,json}`);
-    console.log(`\u{1F3AF} Format:     ${format}`);
-    console.log(`\u{1F4CF} Max Size:   ${maxSize}x${maxSize}`);
-    console.log(`\u{1F532} Padding:    ${padding}px`);
-    console.log(`\u{1F533} Spacing:    ${spacing}px`);
-    console.log(`\u2702\uFE0F  Trim:       ${options.trim ? "Yes" : "No"}`);
-    console.log(`\u{1F50D} Scale:      ${scale}`);
+    console.log(`\u{1F4C1} Input:        ${options.input}`);
+    console.log(`\u{1F4E6} Output:       ${options.output}.{png,json}`);
+    console.log(`\u{1F3AF} Format:       ${format}`);
+    console.log(`\u{1F4CF} Max Size:     ${maxSize}x${maxSize}`);
+    console.log(`\u{1F532} Padding:      ${padding}px`);
+    console.log(`\u{1F533} Spacing:      ${spacing}px`);
+    console.log(`\u2702\uFE0F  Trim:         ${options.trim ? "Yes" : "No"}`);
+    console.log(`\u{1F50D} Scale:        ${scale}`);
+    if (resizeTo) {
+      console.log(`\u{1F4D0} Resize To:    ${resizeTo}px (${options.resizeMode}, ${options.resizeFilter})`);
+    }
+    if (gridSize) {
+      console.log(`\u{1F533} Grid Size:    ${gridSize}px (metadata: ${options.gridMetadata ? "Yes" : "No"})`);
+    }
     console.log("");
     console.log("\u23F3 Generating atlas...\n");
     const startTime = Date.now();
@@ -65,7 +83,12 @@ program.name("simple-sprite-atlas").description("Lightweight sprite atlas genera
       padding,
       spacing,
       trim: options.trim,
-      scale
+      scale,
+      resizeTo,
+      resizeMode: options.resizeMode,
+      resizeFilter: options.resizeFilter,
+      gridSize,
+      gridMetadata: options.gridMetadata
     });
     const duration = Date.now() - startTime;
     console.log("\u2705 Atlas generated successfully!\n");
