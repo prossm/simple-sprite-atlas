@@ -1,7 +1,7 @@
 /**
  * Output format for the atlas
  */
-type AtlasFormat = 'phaser3-hash' | 'phaser3-array';
+type AtlasFormat = 'phaser3-hash' | 'phaser3-array' | 'tiled';
 /**
  * Resize mode for sprite resizing
  */
@@ -75,6 +75,20 @@ interface AtlasOptions {
      * @default false
      */
     gridMetadata?: boolean;
+    /**
+     * Sort sprites alphabetically for stable, predictable tile IDs
+     * Recommended for use with Tiled to prevent tile ID changes when sprites are added
+     * When enabled, also creates a .manifest.json file to track sprite IDs across rebuilds
+     * @default false
+     */
+    stableOrder?: boolean;
+    /**
+     * Preserve existing sprite IDs from previous atlas generation
+     * Reads the existing output JSON to maintain tile ID stability
+     * Only works when stableOrder is enabled
+     * @default true (when stableOrder is true)
+     */
+    preserveIds?: boolean;
 }
 /**
  * Sprite metadata from input file
@@ -197,6 +211,47 @@ interface PhaserArrayAtlas {
     };
 }
 /**
+ * Sprite manifest for preserving tile IDs across rebuilds
+ */
+interface SpriteManifest {
+    version: string;
+    spriteOrder: string[];
+    metadata?: {
+        created: string;
+        modified: string;
+    };
+}
+/**
+ * Tiled tileset tile definition
+ */
+interface TiledTile {
+    id: number;
+    type?: string;
+    properties?: Array<{
+        name: string;
+        type: string;
+        value: string | number | boolean;
+    }>;
+}
+/**
+ * Tiled tileset JSON format (.tsj)
+ */
+interface TiledTileset {
+    version?: string;
+    tiledversion?: string;
+    name: string;
+    tilewidth: number;
+    tileheight: number;
+    tilecount: number;
+    columns: number;
+    image: string;
+    imagewidth: number;
+    imageheight: number;
+    margin?: number;
+    spacing?: number;
+    tiles?: TiledTile[];
+}
+/**
  * Result of atlas generation
  */
 interface AtlasResult {
@@ -260,6 +315,14 @@ declare class AtlasGenerator {
      */
     private generatePhaserArrayFormat;
     /**
+     * Generate Tiled tileset format JSON (.tsj)
+     */
+    private generateTiledFormat;
+    /**
+     * Calculate the number of columns for Tiled tileset based on placements
+     */
+    private calculateTiledColumns;
+    /**
      * Get base path for frame key generation
      * Extracts the base directory from a glob pattern by finding
      * the path before any wildcard characters
@@ -269,6 +332,19 @@ declare class AtlasGenerator {
      * Generate frame key from file path, preserving directory structure
      */
     private generateFrameKey;
+    /**
+     * Load existing sprite manifest to preserve tile IDs
+     */
+    private loadManifest;
+    /**
+     * Save sprite manifest for future builds
+     */
+    private saveManifest;
+    /**
+     * Reorder sprites based on existing manifest to preserve tile IDs
+     * Existing sprites keep their order, new sprites are appended alphabetically at the end
+     */
+    private reorderSpritesFromManifest;
 }
 
 /**
@@ -279,7 +355,8 @@ declare class GridPacker {
     private padding;
     private maxSize;
     private gridSize?;
-    constructor(padding?: number, maxSize?: number, gridSize?: number);
+    private stableOrder;
+    constructor(padding?: number, maxSize?: number, gridSize?: number, stableOrder?: boolean);
     /**
      * Pack sprites into an atlas layout
      * Returns array of sprite placements and final atlas dimensions
@@ -334,4 +411,4 @@ declare class GridPacker {
  */
 declare function generateAtlas(options: AtlasOptions): Promise<AtlasResult>;
 
-export { type AtlasFormat, AtlasGenerator, type AtlasOptions, type AtlasResult, GridPacker, type PhaserArrayAtlas, type PhaserFrame, type PhaserHashAtlas, type SpriteInfo, type SpritePlacement, generateAtlas };
+export { type AtlasFormat, AtlasGenerator, type AtlasOptions, type AtlasResult, GridPacker, type PhaserArrayAtlas, type PhaserFrame, type PhaserHashAtlas, type SpriteInfo, type SpriteManifest, type SpritePlacement, type TiledTile, type TiledTileset, generateAtlas };

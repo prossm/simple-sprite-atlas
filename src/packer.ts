@@ -15,11 +15,13 @@ export class GridPacker {
   private padding: number;
   private maxSize: number;
   private gridSize?: number;
+  private stableOrder: boolean;
 
-  constructor(padding: number = 2, maxSize: number = 2048, gridSize?: number) {
+  constructor(padding: number = 2, maxSize: number = 2048, gridSize?: number, stableOrder: boolean = false) {
     this.padding = padding;
     this.maxSize = maxSize;
     this.gridSize = gridSize;
+    this.stableOrder = stableOrder;
   }
 
   /**
@@ -53,8 +55,13 @@ export class GridPacker {
     height: number;
   } {
 
-    // Sort sprites by height (descending) for better packing
-    const sortedSprites = [...sprites].sort((a, b) => b.height - a.height);
+    // Sort sprites: alphabetically if stable order is enabled, otherwise by height
+    const sortedSprites = [...sprites].sort((a, b) => {
+      if (this.stableOrder) {
+        return a.key.localeCompare(b.key);
+      }
+      return b.height - a.height;
+    });
 
     const placements: SpritePlacement[] = [];
     let currentX = this.padding;
@@ -121,10 +128,13 @@ export class GridPacker {
   } {
     const gridSize = this.gridSize!;
 
-    // Sort sprites by area (largest first) for better packing
-    const sortedSprites = [...sprites].sort(
-      (a, b) => b.width * b.height - a.width * a.height
-    );
+    // Sort sprites: alphabetically if stable order is enabled, otherwise by area
+    const sortedSprites = [...sprites].sort((a, b) => {
+      if (this.stableOrder) {
+        return a.key.localeCompare(b.key);
+      }
+      return b.width * b.height - a.width * a.height;
+    });
 
     const placements: SpritePlacement[] = [];
     let currentX = 0;

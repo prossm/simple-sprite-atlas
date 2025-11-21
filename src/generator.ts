@@ -10,6 +10,8 @@ import type {
   SpritePlacement,
   PhaserHashAtlas,
   PhaserArrayAtlas,
+  TiledTileset,
+  SpriteManifest,
 } from './types.js';
 
 /**
@@ -30,6 +32,8 @@ export class AtlasGenerator {
       resizeMode: 'contain',
       resizeFilter: 'lanczos',
       gridMetadata: false,
+      stableOrder: false,
+      preserveIds: true,
       ...options,
     };
   }
@@ -39,17 +43,23 @@ export class AtlasGenerator {
    */
   async generate(): Promise<AtlasResult> {
     // Find all input images
-    const sprites = await this.loadSprites();
+    let sprites = await this.loadSprites();
 
     if (sprites.length === 0) {
       throw new Error(`No images found matching pattern: ${this.options.input}`);
+    }
+
+    // If stable order is enabled, load existing manifest and reorder sprites
+    if (this.options.stableOrder && this.options.preserveIds) {
+      sprites = await this.reorderSpritesFromManifest(sprites);
     }
 
     // Pack sprites
     const packer = new GridPacker(
       this.options.padding + this.options.spacing,
       this.options.maxSize,
-      this.options.gridSize
+      this.options.gridSize,
+      false  // Don't sort in packer, we've already ordered the sprites
     );
 
     if (!packer.canFit(sprites)) {
@@ -68,6 +78,11 @@ export class AtlasGenerator {
     // Generate JSON metadata
     const jsonPath = `${this.options.output}.json`;
     await this.generateJSON(placements, width, height, jsonPath);
+
+    // Save manifest for stable ordering if enabled
+    if (this.options.stableOrder && this.options.preserveIds) {
+      await this.saveManifest(placements);
+    }
 
     return {
       imagePath,
@@ -274,9 +289,10 @@ export class AtlasGenerator {
     height: number,
     outputPath: string
   ): Promise<void> {
-    const imageName = path.basename(outputPath).replace('.json', '.png');
+    const imageName = path.basename(outputPath).replace('.json', '.png').replace('.tsj', '.png');
 
-    let jsonData: PhaserHashAtlas | PhaserArrayAtlas;
+    let jsonData: PhaserHashAtlas | PhaserArrayAtlas | TiledTileset;
+    let finalOutputPath = outputPath;
 
     if (this.options.format === 'phaser3-hash') {
       jsonData = this.generatePhaserHashFormat(
@@ -285,8 +301,17 @@ export class AtlasGenerator {
         height,
         imageName
       );
-    } else {
+    } else if (this.options.format === 'phaser3-array') {
       jsonData = this.generatePhaserArrayFormat(
+        placements,
+        width,
+        height,
+        imageName
+      );
+    } else {
+      // Tiled format uses .tsj extension
+      finalOutputPath = outputPath.replace('.json', '.tsj');
+      jsonData = this.generateTiledFormat(
         placements,
         width,
         height,
@@ -294,7 +319,7 @@ export class AtlasGenerator {
       );
     }
 
-    await fs.writeFile(outputPath, JSON.stringify(jsonData, null, 2), 'utf-8');
+    await fs.writeFile(finalOutputPath, JSON.stringify(jsonData, null, 2), 'utf-8');
   }
 
   /**
@@ -427,6 +452,89 @@ export class AtlasGenerator {
   }
 
   /**
+   * Generate Tiled tileset format JSON (.tsj)
+   */
+  private generateTiledFormat(
+    placements: SpritePlacement[],
+    width: number,
+    height: number,
+    imageName: string
+  ): TiledTileset {
+    // Calculate grid dimensions based on gridSize if available, otherwise use max sprite dimensions
+    let tileWidth: number;
+    let tileHeight: number;
+    let columns: number;
+
+    if (this.options.gridSize) {
+      // Use grid size as tile dimensions
+      tileWidth = this.options.gridSize;
+      tileHeight = this.options.gridSize;
+      columns = Math.floor(width / this.options.gridSize);
+    } else {
+      // Find the most common or maximum sprite dimensions
+      // For simplicity, use the first sprite's dimensions
+      // In a real implementation, you might want to find the max or most common size
+      const firstSprite = placements[0];
+      tileWidth = firstSprite.width;
+      tileHeight = firstSprite.height;
+
+      // Calculate columns based on actual placements
+      // We'll scan the placements to determine the grid structure
+      columns = this.calculateTiledColumns(placements);
+    }
+
+    // Create tiles with properties mapping to original filenames
+    const tiles = placements.map((placement, index) => ({
+      id: index,
+      type: placement.key,
+      properties: [
+        {
+          name: 'filename',
+          type: 'string',
+          value: placement.key,
+        },
+        {
+          name: 'originalPath',
+          type: 'string',
+          value: placement.path,
+        },
+      ],
+    }));
+
+    return {
+      version: '1.10',
+      tiledversion: '1.10.0',
+      name: path.basename(imageName, '.png'),
+      tilewidth: tileWidth,
+      tileheight: tileHeight,
+      tilecount: placements.length,
+      columns,
+      image: imageName,
+      imagewidth: width,
+      imageheight: height,
+      margin: 0,
+      spacing: this.options.padding + this.options.spacing,
+      tiles,
+    };
+  }
+
+  /**
+   * Calculate the number of columns for Tiled tileset based on placements
+   */
+  private calculateTiledColumns(placements: SpritePlacement[]): number {
+    if (placements.length === 0) return 0;
+
+    // Find sprites on the first row (y position close to padding)
+    const firstRowY = placements[0].y;
+    const threshold = 5; // pixels tolerance
+    const firstRowSprites = placements.filter(
+      (p) => Math.abs(p.y - firstRowY) <= threshold
+    );
+
+    return Math.max(1, firstRowSprites.length);
+  }
+
+  /**
    * Get base path for frame key generation
    * Extracts the base directory from a glob pattern by finding
    * the path before any wildcard characters
@@ -473,5 +581,94 @@ export class AtlasGenerator {
 
     // Normalize path separators to forward slashes
     return relativePath.replace(/\\/g, '/');
+  }
+
+  /**
+   * Load existing sprite manifest to preserve tile IDs
+   */
+  private async loadManifest(): Promise<SpriteManifest | null> {
+    const manifestPath = `${this.options.output}.manifest.json`;
+
+    try {
+      const data = await fs.readFile(manifestPath, 'utf-8');
+      return JSON.parse(data) as SpriteManifest;
+    } catch {
+      // Manifest doesn't exist or is invalid, that's okay
+      return null;
+    }
+  }
+
+  /**
+   * Save sprite manifest for future builds
+   */
+  private async saveManifest(placements: SpritePlacement[]): Promise<void> {
+    const manifestPath = `${this.options.output}.manifest.json`;
+
+    const manifest: SpriteManifest = {
+      version: '1.0',
+      spriteOrder: placements.map(p => p.key),
+      metadata: {
+        created: new Date().toISOString(),
+        modified: new Date().toISOString(),
+      },
+    };
+
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+  }
+
+  /**
+   * Reorder sprites based on existing manifest to preserve tile IDs
+   * Existing sprites keep their order, new sprites are appended alphabetically at the end
+   */
+  private async reorderSpritesFromManifest(sprites: SpriteInfo[]): Promise<SpriteInfo[]> {
+    const manifest = await this.loadManifest();
+
+    if (!manifest || manifest.spriteOrder.length === 0) {
+      // No manifest exists, sort alphabetically for initial generation
+      return [...sprites].sort((a, b) => a.key.localeCompare(b.key));
+    }
+
+    // Create a map of existing sprites by key
+    const spriteMap = new Map<string, SpriteInfo>();
+    for (const sprite of sprites) {
+      spriteMap.set(sprite.key, sprite);
+    }
+
+    // Separate sprites into existing (from manifest) and new
+    const orderedSprites: SpriteInfo[] = [];
+    const newSpriteKeys = new Set(spriteMap.keys());
+
+    // First, add all sprites that exist in the manifest, in manifest order
+    for (const key of manifest.spriteOrder) {
+      const sprite = spriteMap.get(key);
+      if (sprite) {
+        orderedSprites.push(sprite);
+        newSpriteKeys.delete(key);
+      }
+      // If sprite is in manifest but not in current sprites, it was deleted - skip it
+    }
+
+    // Then, add any new sprites alphabetically at the end
+    const newSprites = Array.from(newSpriteKeys)
+      .map(key => spriteMap.get(key)!)
+      .sort((a, b) => a.key.localeCompare(b.key));
+
+    orderedSprites.push(...newSprites);
+
+    // Log changes for user feedback
+    if (newSprites.length > 0) {
+      console.log(`ℹ️  Added ${newSprites.length} new sprite(s) to end of atlas:`);
+      newSprites.forEach((s, i) => {
+        const tileId = manifest.spriteOrder.length + i;
+        console.log(`   [${tileId}] ${s.key}`);
+      });
+    }
+
+    const removedCount = manifest.spriteOrder.length - (orderedSprites.length - newSprites.length);
+    if (removedCount > 0) {
+      console.log(`ℹ️  Removed ${removedCount} sprite(s) from atlas`);
+    }
+
+    return orderedSprites;
   }
 }

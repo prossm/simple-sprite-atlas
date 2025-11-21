@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
   generateAtlas
-} from "./chunk-NQ3L6DTN.mjs";
+} from "./chunk-AZH2MW45.mjs";
 
 // src/cli.ts
 import { Command } from "commander";
@@ -24,14 +24,14 @@ try {
   }
 }
 var program = new Command();
-program.name("simple-sprite-atlas").description("Lightweight sprite atlas generator for Phaser games").version(packageJson.version).requiredOption("-i, --input <path>", 'Input directory or glob pattern (e.g., "sprites/**/*.png")').requiredOption("-o, --output <path>", 'Output path without extension (e.g., "dist/atlas")').option("-f, --format <format>", "Output format: phaser3-hash or phaser3-array", "phaser3-hash").option("-m, --max-size <size>", "Maximum atlas size (must be power of 2)", "2048").option("-p, --padding <pixels>", "Padding between sprites", "2").option("-s, --spacing <pixels>", "Spacing around each sprite", "0").option("-t, --trim", "Trim transparent pixels", false).option("--scale <scale>", "Scale factor for the atlas", "1").option("--resize-to <size>", "Resize all sprites to fit within <size> pixels (maintains aspect ratio)").option("--resize-mode <mode>", "Resize mode: contain (default), cover, or stretch", "contain").option("--resize-filter <filter>", "Resize filter: lanczos (default), nearest, or linear", "lanczos").option("--grid-size <size>", "Layout sprites on a fixed grid of <size> pixels").option("--grid-metadata", "Include grid position data in JSON output", false).action(async (options) => {
+program.name("simple-sprite-atlas").description("Lightweight sprite atlas generator for Phaser games").version(packageJson.version).requiredOption("-i, --input <path>", 'Input directory or glob pattern (e.g., "sprites/**/*.png")').requiredOption("-o, --output <path>", 'Output path without extension (e.g., "dist/atlas")').option("-f, --format <format>", "Output format: phaser3-hash, phaser3-array, or tiled", "phaser3-hash").option("-m, --max-size <size>", "Maximum atlas size (must be power of 2)", "2048").option("-p, --padding <pixels>", "Padding between sprites", "2").option("-s, --spacing <pixels>", "Spacing around each sprite", "0").option("-t, --trim", "Trim transparent pixels", false).option("--scale <scale>", "Scale factor for the atlas", "1").option("--resize-to <size>", "Resize all sprites to fit within <size> pixels (maintains aspect ratio)").option("--resize-mode <mode>", "Resize mode: contain (default), cover, or stretch", "contain").option("--resize-filter <filter>", "Resize filter: lanczos (default), nearest, or linear", "lanczos").option("--grid-size <size>", "Layout sprites on a fixed grid of <size> pixels").option("--grid-metadata", "Include grid position data in JSON output", false).option("--stable-order", "Sort sprites alphabetically for stable tile IDs (recommended for Tiled)", false).action(async (options) => {
   try {
     console.log("\u{1F3A8} Simple Sprite Atlas Generator");
     console.log("================================\n");
     const format = options.format;
-    if (format !== "phaser3-hash" && format !== "phaser3-array") {
+    if (format !== "phaser3-hash" && format !== "phaser3-array" && format !== "tiled") {
       console.error(`\u274C Invalid format: ${format}`);
-      console.error("   Valid formats: phaser3-hash, phaser3-array");
+      console.error("   Valid formats: phaser3-hash, phaser3-array, tiled");
       process.exit(1);
     }
     const maxSize = parseInt(options.maxSize, 10);
@@ -72,6 +72,9 @@ program.name("simple-sprite-atlas").description("Lightweight sprite atlas genera
     if (gridSize) {
       console.log(`\u{1F533} Grid Size:    ${gridSize}px (metadata: ${options.gridMetadata ? "Yes" : "No"})`);
     }
+    if (options.stableOrder) {
+      console.log(`\u{1F522} Stable Order: Yes (alphabetical sorting)`);
+    }
     console.log("");
     console.log("\u23F3 Generating atlas...\n");
     const startTime = Date.now();
@@ -88,7 +91,8 @@ program.name("simple-sprite-atlas").description("Lightweight sprite atlas genera
       resizeMode: options.resizeMode,
       resizeFilter: options.resizeFilter,
       gridSize,
-      gridMetadata: options.gridMetadata
+      gridMetadata: options.gridMetadata,
+      stableOrder: options.stableOrder
     });
     const duration = Date.now() - startTime;
     console.log("\u2705 Atlas generated successfully!\n");

@@ -36,7 +36,7 @@ program
   .version(packageJson.version)
   .requiredOption('-i, --input <path>', 'Input directory or glob pattern (e.g., "sprites/**/*.png")')
   .requiredOption('-o, --output <path>', 'Output path without extension (e.g., "dist/atlas")')
-  .option('-f, --format <format>', 'Output format: phaser3-hash or phaser3-array', 'phaser3-hash')
+  .option('-f, --format <format>', 'Output format: phaser3-hash, phaser3-array, or tiled', 'phaser3-hash')
   .option('-m, --max-size <size>', 'Maximum atlas size (must be power of 2)', '2048')
   .option('-p, --padding <pixels>', 'Padding between sprites', '2')
   .option('-s, --spacing <pixels>', 'Spacing around each sprite', '0')
@@ -47,6 +47,7 @@ program
   .option('--resize-filter <filter>', 'Resize filter: lanczos (default), nearest, or linear', 'lanczos')
   .option('--grid-size <size>', 'Layout sprites on a fixed grid of <size> pixels')
   .option('--grid-metadata', 'Include grid position data in JSON output', false)
+  .option('--stable-order', 'Sort sprites alphabetically for stable tile IDs (recommended for Tiled)', false)
   .action(async (options) => {
     try {
       console.log('🎨 Simple Sprite Atlas Generator');
@@ -54,9 +55,9 @@ program
 
       // Validate format
       const format = options.format as AtlasFormat;
-      if (format !== 'phaser3-hash' && format !== 'phaser3-array') {
+      if (format !== 'phaser3-hash' && format !== 'phaser3-array' && format !== 'tiled') {
         console.error(`❌ Invalid format: ${format}`);
-        console.error('   Valid formats: phaser3-hash, phaser3-array');
+        console.error('   Valid formats: phaser3-hash, phaser3-array, tiled');
         process.exit(1);
       }
 
@@ -108,6 +109,9 @@ program
       if (gridSize) {
         console.log(`🔳 Grid Size:    ${gridSize}px (metadata: ${options.gridMetadata ? 'Yes' : 'No'})`);
       }
+      if (options.stableOrder) {
+        console.log(`🔢 Stable Order: Yes (alphabetical sorting)`);
+      }
       console.log('');
 
       // Generate atlas
@@ -129,6 +133,7 @@ program
         resizeFilter: options.resizeFilter,
         gridSize,
         gridMetadata: options.gridMetadata,
+        stableOrder: options.stableOrder,
       });
 
       const duration = Date.now() - startTime;

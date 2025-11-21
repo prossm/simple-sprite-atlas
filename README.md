@@ -97,7 +97,7 @@ console.log(`Size: ${result.size.width}x${result.size.height}`);
 |--------|-------|-------------|---------|
 | `--input <path>` | `-i` | Input directory or glob pattern | **required** |
 | `--output <path>` | `-o` | Output path (without extension) | **required** |
-| `--format <format>` | `-f` | Output format: `phaser3-hash` or `phaser3-array` | `phaser3-hash` |
+| `--format <format>` | `-f` | Output format: `phaser3-hash`, `phaser3-array`, or `tiled` | `phaser3-hash` |
 | `--max-size <size>` | `-m` | Maximum atlas size (power of 2) | `2048` |
 | `--padding <pixels>` | `-p` | Padding between sprites | `2` |
 | `--spacing <pixels>` | `-s` | Spacing around each sprite | `0` |
@@ -108,6 +108,7 @@ console.log(`Size: ${result.size.width}x${result.size.height}`);
 | `--resize-filter <filter>` | | Resize filter: `lanczos`, `nearest`, or `linear` | `lanczos` |
 | `--grid-size <size>` | | Layout sprites on fixed grid of size pixels | none |
 | `--grid-metadata` | | Include grid position data in JSON output | `false` |
+| `--stable-order` | | Sort sprites alphabetically for stable tile IDs (recommended for Tiled) | `false` |
 
 ## API Reference
 
@@ -121,7 +122,7 @@ Generate a sprite atlas from input images.
 interface AtlasOptions {
   input: string;           // Directory path or glob pattern
   output: string;          // Output path without extension
-  format?: 'phaser3-hash' | 'phaser3-array';
+  format?: 'phaser3-hash' | 'phaser3-array' | 'tiled';
   maxSize?: number;        // Default: 2048
   padding?: number;        // Default: 2
   spacing?: number;        // Default: 0
@@ -132,6 +133,8 @@ interface AtlasOptions {
   resizeFilter?: 'lanczos' | 'nearest' | 'linear';  // Default: 'lanczos'
   gridSize?: number;       // Layout sprites on fixed grid
   gridMetadata?: boolean;  // Include grid position data (default: false)
+  stableOrder?: boolean;   // Enable persistent manifest for stable tile IDs (default: false)
+  preserveIds?: boolean;   // Preserve IDs from existing manifest (default: true when stableOrder=true)
 }
 ```
 
@@ -207,6 +210,165 @@ class GameScene extends Phaser.Scene {
   }
 }
 ```
+
+## Integration with Tiled Map Editor
+
+Simple Sprite Atlas can generate Tiled-compatible tilesets with stable tile IDs that won't change when you add new sprites.
+
+### The Problem with Dynamic Atlas Packing
+
+Traditional atlas generators optimize packing by sorting sprites by size, which means:
+- Adding a new sprite can cause ALL existing sprites to shift positions
+- Tile IDs in Tiled maps change unpredictably
+- Your maps break every time you add a sprite
+
+**Even alphabetical sorting isn't enough!** If you have "cat" and "dog" sprites, adding "dingo" will shift "dog" and break your maps.
+
+### The Solution: Persistent Manifest + Stable Order
+
+Simple Sprite Atlas solves this with a **manifest file** that tracks which sprites have which IDs:
+
+Use `--stable-order` to enable persistent ID tracking:
+
+```bash
+simple-sprite-atlas \
+  --input "assets/tiles/**/*.png" \
+  --output dist/tileset \
+  --format tiled \
+  --stable-order \
+  --grid-size 32
+```
+
+This will:
+1. Generate a `.manifest.json` file tracking sprite→ID mappings
+2. On subsequent builds, read the manifest and preserve existing sprite positions
+3. Append new sprites to the end with new IDs
+4. Sort new sprites alphabetically before appending
+5. Generate a `.tsj` (Tiled tileset JSON) file with stable IDs
+
+**How it works:**
+- **First build**: Sprites are sorted alphabetically and a manifest is created
+- **Subsequent builds**: Existing sprites keep their IDs (even if renamed files would sort differently), new sprites are added at the end
+
+### Using with Tiled
+
+1. Generate your tileset:
+   ```bash
+   simple-sprite-atlas \
+     --input "world/tiles" \
+     --output "world/tileset" \
+     --format tiled \
+     --stable-order \
+     --grid-size 32
+   ```
+
+2. In Tiled, add the generated tileset:
+   - Go to Map → Add External Tileset
+   - Select `world/tileset.tsj`
+   - The tileset will reference `world/tileset.png`
+
+3. Each tile includes custom properties:
+   - `filename`: Original sprite filename (e.g., "ground/grass_02.png")
+   - `originalPath`: Full path to source file
+
+### Benefits of Persistent Manifest
+
+**Without `--stable-order` (size-based sorting):**
+```
+Initial build:
+  grass_01.png → Tile ID 10
+  grass_02.png → Tile ID 126
+
+After adding tree_01.png:
+  grass_01.png → Tile ID 57  ← ID CHANGED!
+  grass_02.png → Tile ID 203 ← ID CHANGED!
+  tree_01.png  → Tile ID 10
+```
+❌ Your Tiled maps now show the wrong tiles!
+
+**With alphabetical sorting only:**
+```
+Initial: cat.png → ID 0, dog.png → ID 1
+Add dingo.png: cat.png → ID 0, dingo.png → ID 1, dog.png → ID 2
+```
+❌ "dog" shifted from ID 1 to ID 2, maps still break!
+
+**With `--stable-order` (persistent manifest):**
+```
+Initial build (creates .manifest.json):
+  cat.png → Tile ID 0
+  dog.png → Tile ID 1
+
+After adding dingo.png:
+  cat.png → Tile ID 0  ← STABLE (from manifest)
+  dog.png → Tile ID 1  ← STABLE (from manifest)
+  dingo.png → Tile ID 2 ← NEW (appended)
+```
+✅ Your existing maps still work perfectly!
+
+The manifest file ensures that once a sprite has an ID, it keeps that ID forever (until you explicitly delete the manifest).
+
+### Recommended Workflow for Tiled
+
+```bash
+# Development: Generate tileset with stable IDs
+simple-sprite-atlas \
+  --input "assets/world/tiles" \
+  --output "assets/world/tileset" \
+  --format tiled \
+  --stable-order \
+  --grid-size 32 \
+  --padding 0
+
+# Use in Tiled, then export your maps
+# Maps reference tiles by stable IDs
+
+# In your game, load the same atlas for rendering
+# Phaser can also use the Tiled format or you can generate both:
+
+# Generate Phaser format alongside Tiled format
+simple-sprite-atlas \
+  --input "assets/world/tiles" \
+  --output "assets/world/atlas" \
+  --format phaser3-hash \
+  --stable-order \
+  --grid-size 32 \
+  --padding 0
+```
+
+### Manifest File
+
+The `.manifest.json` file tracks sprite order:
+
+```json
+{
+  "version": "1.0",
+  "spriteOrder": [
+    "cat.png",
+    "dog.png",
+    "dingo.png"
+  ],
+  "metadata": {
+    "created": "2025-01-15T10:30:00.000Z",
+    "modified": "2025-01-15T11:45:00.000Z"
+  }
+}
+```
+
+**Important:**
+- ✅ **Commit the manifest to version control** alongside your atlas files
+- ✅ New sprites are appended to the end automatically
+- ✅ Deleted sprites are removed from the manifest (gaps in IDs are okay)
+- ✅ You can rename sprite files - the manifest preserves their original keys
+- ⚠️ Deleting the manifest resets all tile IDs (re-sorts alphabetically)
+
+### Notes
+
+- **Consistent naming helps**: Use patterns like `tile_001.png`, `tile_002.png` for the initial alphabetical sort
+- **Renaming is safe**: With the manifest, you can rename files and IDs stay stable
+- **Use subdirectories**: Organize sprites in folders (e.g., `ground/`, `walls/`, `items/`)
+- **The Tiled format (.tsj)** includes properties to help you identify tiles by name in your game code
+- **Version control**: Always commit `.manifest.json` with your atlas to keep IDs stable across team members
 
 ## Features
 

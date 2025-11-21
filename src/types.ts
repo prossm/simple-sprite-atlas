@@ -1,7 +1,7 @@
 /**
  * Output format for the atlas
  */
-export type AtlasFormat = 'phaser3-hash' | 'phaser3-array';
+export type AtlasFormat = 'phaser3-hash' | 'phaser3-array' | 'tiled';
 
 /**
  * Resize mode for sprite resizing
@@ -90,6 +90,22 @@ export interface AtlasOptions {
    * @default false
    */
   gridMetadata?: boolean;
+
+  /**
+   * Sort sprites alphabetically for stable, predictable tile IDs
+   * Recommended for use with Tiled to prevent tile ID changes when sprites are added
+   * When enabled, also creates a .manifest.json file to track sprite IDs across rebuilds
+   * @default false
+   */
+  stableOrder?: boolean;
+
+  /**
+   * Preserve existing sprite IDs from previous atlas generation
+   * Reads the existing output JSON to maintain tile ID stability
+   * Only works when stableOrder is enabled
+   * @default true (when stableOrder is true)
+   */
+  preserveIds?: boolean;
 }
 
 /**
@@ -196,6 +212,50 @@ export interface PhaserArrayAtlas {
     size: { w: number; h: number };
     scale: number;
   };
+}
+
+/**
+ * Sprite manifest for preserving tile IDs across rebuilds
+ */
+export interface SpriteManifest {
+  version: string;
+  spriteOrder: string[];  // Array of sprite keys in order
+  metadata?: {
+    created: string;
+    modified: string;
+  };
+}
+
+/**
+ * Tiled tileset tile definition
+ */
+export interface TiledTile {
+  id: number;
+  type?: string;
+  properties?: Array<{
+    name: string;
+    type: string;
+    value: string | number | boolean;
+  }>;
+}
+
+/**
+ * Tiled tileset JSON format (.tsj)
+ */
+export interface TiledTileset {
+  version?: string;
+  tiledversion?: string;
+  name: string;
+  tilewidth: number;
+  tileheight: number;
+  tilecount: number;
+  columns: number;
+  image: string;
+  imagewidth: number;
+  imageheight: number;
+  margin?: number;
+  spacing?: number;
+  tiles?: TiledTile[];
 }
 
 /**

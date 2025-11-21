@@ -42,6 +42,9 @@ export type {
   PhaserFrame,
   PhaserHashAtlas,
   PhaserArrayAtlas,
+  TiledTileset,
+  TiledTile,
+  SpriteManifest,
 } from './types.js';
 
 // Export classes for advanced usage
